@@ -5,7 +5,10 @@ namespace Taf;
 use Taf\WsdMonitor;
 use Taf\AgentRouterRequest;
 use Taf\AgentRouterResponse;
-class TafAssistant {
+use Taf\RouterNodeInfo;
+
+class TafAssistantV2
+{
 
     const SOCKET_MODE_UDP = 1;
     const SOCKET_MODE_TCP = 2;
@@ -14,7 +17,7 @@ class TafAssistant {
     // 错误码定义（需要从扩展开始规划）
     const TAF_SUCCESS = 0; // taf
     const TAF_FAILED = 1; // taf失败（通用失败）
-    const TAF_MALLOC_FAILED = -100; // 内存分配失败
+    const TAF_MALLOC_FAILED = -1; // 内存分配失败
 
     const ROUTE_FAIL = -100;
 
@@ -25,7 +28,8 @@ class TafAssistant {
     const TAF_SOCKET_TIMEOUT = -1006; // socket超时，一般是svr后台没回包，或者seq错误
     const TAF_SOCKET_CONNECT_FAILED = -1007; // socket tcp 连接失败
     const TAF_SOCKET_CLOSED = -1008; // socket tcp 服务端连接关闭
-    const TAF_SOCKET_CREATE_FAILED = 1002;//socket 创建失败
+    const TAF_SOCKET_CREATE_FAILED = -10070;
+
 
     const TAF_PUT_STRUCT_FAILED = -9;
     const TAF_PUT_VECTOR_FAILED = -10;
@@ -43,8 +47,8 @@ class TafAssistant {
     const TAF_PUT_DOUBLE_FAILED = -22;
 
 
-    const TAF_ENCODE_FAILED = -20;
-    const TAF_DECODE_FAILED = -21;
+    const TAF_ENCODE_FAILED = -25;
+    const TAF_DECODE_FAILED = -26;
     const TAF_GET_INT64_FAILED = -31;
     const TAF_GET_MAP_FAILED = -32;
     const TAF_GET_STRUCT_FAILED = -33;
@@ -60,7 +64,6 @@ class TafAssistant {
     const TAF_GET_DOUBLE_FAILED = -43;
     const TAF_GET_FLOAT_FAILED = -44;
 
-
     // taf服务端可能返回的错误码
     const JCESERVERSUCCESS       = 0; //服务器端处理成功
     const JCESERVERDECODEERR     = -1; //服务器端解码异常
@@ -75,7 +78,6 @@ class TafAssistant {
 
 
 
-
     private $tafRequestBuf;
     private $tafResponseBuf;
     private $tafDecodeData;
@@ -86,20 +88,31 @@ class TafAssistant {
 
     private $servantName;
     private $funcName;
-    private $encodeBufs;
+
+    private $encodeBufs = array();
 
     private static $iRequestId = 1;
+
+    public $_callerName = 'qdPcSite';
+
+    public $cPacketType=0;
+    public $iMessageType=0;
+    public $iTimeout=2;
+    public $contexts=[];
+    public $statuses=[];
 
 
     /**
      * 构造函数
      */
-    public function __construct()
+    public function __construct($callerName='qdPcSite')
     {
-        $this->encodeBufs = [];
+        $this->_callerName = $callerName;
     }
 
-    public function setRequest($servantName,$funcName,$ip="", $port=0,$mode=self::SOCKET_MODE_TCP,$iVersion=3) {
+    public function setRequest($servantName,$funcName,$ip="", $port=0,$mode=self::SOCKET_MODE_TCP,
+                               $iVersion=3,$cPacketType=0,$iMessageType=0,$iTimeout=2,$contexts=[],$statuses=[])
+    {
 
         if(empty($ip)) {
             $ret = $this->getRouteByAgent($servantName);
@@ -117,77 +130,90 @@ class TafAssistant {
             $this->sIp = $ip;
             $this->iPort = $port;
         }
+
         $this->servantName = $servantName;
         $this->funcName = $funcName;
         $this->iVersion = $iVersion;
         $this->socketMode = $mode;
-    }
+        $this->iTimeout = $iTimeout;
 
-    /*
-    向agent上报调用服务的情况 todo
-     */
-    public function updateServiceToAgent() {
-
+        if ($cPacketType) {
+            $this->cPacketType = $cPacketType;
+        }
+        if ($iMessageType) {
+            $this->iMessageType = $iMessageType;
+        }
+        if (!empty($contexts)) {
+            $this->contexts = $contexts;
+        }
+        if (!empty($statuses)) {
+            $this->statuses = $statuses;
+        }
     }
 
     /**
      * 从agent获取主控
      */
-
-    private function getRouteByAgent($sObj) {
+    private function getRouteByAgent($sObj)
+    {
         $agentRouterRequest = new AgentRouterRequest();
-
-        $arr = array(
-            'type' => 0,
-            'sObj' => $sObj
-        );
+        $agentRouterRequest->type = 0;
+        $agentRouterRequest->sObj = $sObj;
 
         $iVersion = 3;
         $iRequestId = self::$iRequestId;
-        $servantName = "taf.tafagent.RouterObj";
+        $servantName = "taf.tafagent.RouterNewObj";
         $funcName = "getRouterNodes";
 
-        $obj = WsdMonitor::startActive('qdPcSite', $servantName, "127.0.0.133333", $funcName);
+        $obj = WsdMonitor::startActive($this->_callerName, $servantName, "127.0.0.133333", $funcName);
 
-        $structBuffer = \TWUP::putStruct("req",$agentRouterRequest,$arr);
+
+        $structBuffer = \Taf\PHPTAF::putStruct_v2("req", $agentRouterRequest);
 
         $inbuf_arr = [
-            'req' =>  $structBuffer
+            'req' => $structBuffer
         ];
 
-        $this->tafRequestBuf = \TWUP::encode($iVersion,$iRequestId,$servantName,$funcName,$inbuf_arr);
+        $this->tafRequestBuf = \Taf\PHPTAF::encode_v2($iVersion, $iRequestId, $servantName, $funcName,
+            $this->cPacketType,$this->iMessageType,1,['SEERAPI_VERSION' => 'SeerRawPhp_v1.0'],$this->statuses,
+            $inbuf_arr);
 
         $this->sIp = "127.0.0.1";
         $this->iPort = "8865";
         $this->servantName = $servantName;
         $this->funcName = $funcName;
-
-        $ret = $this->udpSocket(5);
-        if($ret != self::TAF_SUCCESS) {
-            $obj->endTiming($ret, WsdMonitor::RESULT_FAILED);
+        $ret = ( $this->udpSocket(5));
+        if ($ret['code'] != self::TAF_SUCCESS) {
+            $obj->endTiming($ret['code'], WsdMonitor::RESULT_FAILED);
             return array(
                 'code' => $ret
             );
         }
 
         // 解包
-        $agentRouterResponse = new AgentRouterResponse();
-        $decodeData = \TWUP::decode($this->tafResponseBuf);
-        if($decodeData['code'] != self::TAF_SUCCESS) {
-            $obj->endTiming($decodeData['code'], WsdMonitor::RESULT_FAILED);
+        $agentRouterResponse = new AgentRouterResponse;
+        $decodeData = \Taf\PHPTAF::decode_v2($this->tafResponseBuf);
+        if ($decodeData['status'] != self::TAF_SUCCESS) {
+            $obj->endTiming($decodeData['status'], WsdMonitor::RESULT_FAILED);
             return array(
-                'code' => $decodeData['code']
+                'code' => $decodeData['status']
             );
         }
 
-        $respArr = \TWUP::getStruct("rsp",$agentRouterResponse,$decodeData['buf']);
+        $respArr = \Taf\PHPTAF::getStruct_v2("rsp", $agentRouterResponse, $decodeData['buf']);
 
         // 选合适的ip和port todo
+        if(empty($respArr['vResult'])) {
+            $obj->endTiming(self::ROUTE_FAIL, WsdMonitor::RESULT_FAILED);
+
+            return array(
+                'code' => self::ROUTE_FAIL
+            );
+        }
         $count = count($respArr['vResult'])-1;
         $index = rand(0,$count);
 
         $route = $respArr['vResult'][$index];
-
         $obj->endTiming(self::TAF_SUCCESS);
 
         return array(
@@ -196,320 +222,263 @@ class TafAssistant {
         );
     }
 
+    public function setEncodeBufs($encodeBufs)
+    {
+        $this->encodeBufs = $encodeBufs;
+    }
+
+    public function getTafDecodeData() {
+        return $this->tafDecodeData;
+    }
+
     public function putBool($paramName,$bool) {
         try {
-            $boolBuffer = \TWUP::putBool($paramName,$bool);
+            $boolBuffer = \Taf\PHPTAF::putBool_v2($paramName,$bool);
             if(!is_string($boolBuffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_BOOL_FAILED), self::TAF_PUT_BOOL_FAILED);
             }
             $this->encodeBufs[$paramName] = $boolBuffer;
 
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $boolBuffer
-            );
+            return  self::TAF_SUCCESS;
         } catch (\Exception $e) {
             $code = self::TAF_PUT_BOOL_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
     public function getBool($name) {
         try {
-            $result = \TWUP::getBool($name,$this->tafDecodeData);
-            if($result < 0) {
-                throw new \Exception(self::getErrMsg(self::TAF_GET_BOOL_FAILED), self::TAF_GET_BOOL_FAILED);
-            }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $result = \Taf\PHPTAF::getBool_v2($name,$this->tafDecodeData);
+
+            return $result;
+
         } catch (\Exception $e) {
             $code = self::TAF_GET_BOOL_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function putChar($paramName,$char) {
         try {
-            $charBuffer = \TWUP::putChar($paramName,$char);
+            $charBuffer = \Taf\PHPTAF::putChar_v2($paramName,$char);
             if(!is_string($charBuffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_CHAR_FAILED), self::TAF_PUT_CHAR_FAILED);
             }
             $this->encodeBufs[$paramName] = $charBuffer;
 
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $charBuffer
-            );
+            return  self::TAF_SUCCESS;
         } catch (\Exception $e) {
             $code = self::TAF_PUT_CHAR_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function getChar($name) {
         try {
-            $result = \TWUP::getChar($name,$this->tafDecodeData);
-            if($result < 0) {
-                throw new \Exception(self::getErrMsg(self::TAF_GET_CHAR_FAILED), self::TAF_GET_CHAR_FAILED);
-            }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $result = \Taf\PHPTAF::getChar_v2($name,$this->tafDecodeData);
+
+            return  $result;
+
         } catch (\Exception $e) {
             $code = self::TAF_GET_CHAR_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function putUInt8($paramName,$uint8) {
         try {
-            $uint8Buffer = \TWUP::putUint8($paramName,$uint8);
+            $uint8Buffer = \Taf\PHPTAF::putUint8_v2($paramName,$uint8);
             if(!is_string($uint8Buffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_UINT8_FAILED), self::TAF_PUT_UINT8_FAILED);
             }
             $this->encodeBufs[$paramName] = $uint8Buffer;
 
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $uint8Buffer
-            );
+            return self::TAF_SUCCESS;
+
         } catch (\Exception $e) {
             $code = self::TAF_PUT_UINT8_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function getUint8($name) {
         try {
-            $result = \TWUP::getUint8($name,$this->tafDecodeData);
-            if($result < 0) {
-                throw new \Exception(self::getErrMsg(self::TAF_GET_UINT8_FAILED), self::TAF_GET_UINT8_FAILED);
-            }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $result = \Taf\PHPTAF::getUint8_v2($name,$this->tafDecodeData);
+
+            return  $result;
         } catch (\Exception $e) {
             $code = self::TAF_GET_UINT8_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function putShort($paramName,$short) {
         try {
-            $shortBuffer = \TWUP::putShort($paramName,$short);
+            $shortBuffer = \Taf\PHPTAF::putShort_v2($paramName,$short);
             if(!is_string($shortBuffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_SHORT_FAILED), self::TAF_PUT_SHORT_FAILED);
             }
             $this->encodeBufs[$paramName] = $shortBuffer;
 
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $shortBuffer
-            );
+            return  self::TAF_SUCCESS;
+
         } catch (\Exception $e) {
             $code = self::TAF_PUT_SHORT_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
     }
 
     public function getShort($name) {
         try {
-            $result = \TWUP::getShort($name,$this->tafDecodeData);
-            if($result < 0) {
-                throw new \Exception(self::getErrMsg(self::TAF_GET_SHORT_FAILED), self::TAF_GET_SHORT_FAILED);
-            }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $result = \Taf\PHPTAF::getShort_v2($name,$this->tafDecodeData);
+
+            return $result;
         } catch (\Exception $e) {
             $code = self::TAF_GET_SHORT_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function putUInt16($paramName,$uint16) {
         try {
-            $uint16Buffer = \TWUP::putUint16($paramName,$uint16);
+            $uint16Buffer = \Taf\PHPTAF::putUint16_v2($paramName,$uint16);
             if(!is_string($uint16Buffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_UINT16_FAILED), self::TAF_PUT_UINT16_FAILED);
             }
             $this->encodeBufs[$paramName] = $uint16Buffer;
 
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $uint16Buffer
-            );
+            return self::TAF_SUCCESS;
+
         } catch (\Exception $e) {
             $code = self::TAF_PUT_UINT16_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function getUint16($name) {
         try {
-            $result = \TWUP::getUint16($name,$this->tafDecodeData);
-            if($result < 0) {
-                throw new \Exception(self::getErrMsg(self::TAF_GET_UINT16_FAILED), self::TAF_GET_UINT16_FAILED);
-            }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $result = \Taf\PHPTAF::getUint16_v2($name,$this->tafDecodeData);
+
+            return  $result;
         } catch (\Exception $e) {
             $code = self::TAF_GET_UINT16_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function putInt32($paramName,$int) {
         try {
-            $int32Buffer = \TWUP::putInt32($paramName,$int);
+            $int32Buffer = \Taf\PHPTAF::putInt32_v2($paramName,$int);
             if(!is_string($int32Buffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_INT32_FAILED), self::TAF_PUT_INT32_FAILED);
             }
             $this->encodeBufs[$paramName] = $int32Buffer;
 
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $int32Buffer
-            );
+            return  self::TAF_SUCCESS;
         } catch (\Exception $e) {
             $code = self::TAF_PUT_INT32_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function getInt32($name) {
         try {
-            $result = \TWUP::getInt32($name,$this->tafDecodeData);
-            if($result < 0) {
-                throw new \Exception(self::getErrMsg(self::TAF_GET_INT32_FAILED), self::TAF_GET_INT32_FAILED);
-            }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $result = \Taf\PHPTAF::getInt32_v2($name,$this->tafDecodeData);
+
+            return $result;
         } catch (\Exception $e) {
             $code = self::TAF_GET_INT32_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function putUint32($paramName,$uint) {
         try {
-            $uint32Buffer = \TWUP::putInt32($paramName,$uint);
+            $uint32Buffer = \Taf\PHPTAF::putInt32_v2($paramName,$uint);
             if(!is_string($uint32Buffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_UINT32_FAILED), self::TAF_PUT_UINT32_FAILED);
             }
             $this->encodeBufs[$paramName] = $uint32Buffer;
 
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $uint32Buffer
-            );
+            return self::TAF_SUCCESS;
         } catch (\Exception $e) {
             $code = self::TAF_PUT_UINT32_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
     }
 
 
     public function getUint32($name) {
         try {
-            $result = \TWUP::getUint32($name,$this->tafDecodeData);
-            if($result < 0) {
-                throw new \Exception(self::getErrMsg(self::TAF_GET_UINT32_FAILED), self::TAF_GET_UINT32_FAILED);
-            }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $result = \Taf\PHPTAF::getUint32_v2($name,$this->tafDecodeData);
+
+            return  $result;
         } catch (\Exception $e) {
             $code = self::TAF_GET_UINT32_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function putInt64($paramName,$bigint) {
         try {
-            $int64Buffer = \TWUP::putInt64($paramName,$bigint);
+            $int64Buffer = \Taf\PHPTAF::putInt64_v2($paramName,$bigint);
             if(!is_string($int64Buffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_INT64_FAILED), self::TAF_PUT_INT64_FAILED);
             }
             $this->encodeBufs[$paramName] = $int64Buffer;
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $int64Buffer
-            );
+            return self::TAF_SUCCESS;
+
         } catch (\Exception $e) {
             $code = self::TAF_PUT_INT64_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function getInt64($name) {
         try {
-            $result = \TWUP::getInt64($name,$this->tafDecodeData);
-            if($result < 0) {
-                throw new \Exception(self::getErrMsg(self::TAF_GET_INT64_FAILED), self::TAF_GET_INT64_FAILED);
-            }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $result = \Taf\PHPTAF::getInt64_v2($name,$this->tafDecodeData);
+
+            return  $result;
         } catch (\Exception $e) {
             $code = self::TAF_GET_INT64_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
     }
 
     public function putDouble($paramName,$double) {
         try {
-            $doubleBuffer = \TWUP::putDouble($paramName,$double);
+            $doubleBuffer = \Taf\PHPTAF::putDouble_v2($paramName,$double);
             if(!is_string($doubleBuffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_DOUBLE_FAILED), self::TAF_PUT_DOUBLE_FAILED);
             }
             $this->encodeBufs[$paramName] = $doubleBuffer;
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $doubleBuffer
-            );
+            return  self::TAF_SUCCESS;
         } catch (\Exception $e) {
             $code = self::TAF_PUT_DOUBLE_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
     }
 
     public function getDouble($name) {
         try {
-            $result = \TWUP::getDouble($name,$this->tafDecodeData);
-            if($result < 0) {
-                throw new \Exception(self::getErrMsg(self::TAF_GET_DOUBLE_FAILED), self::TAF_GET_DOUBLE_FAILED);
-            }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $result = \Taf\PHPTAF::getDouble_v2($name,$this->tafDecodeData);
+
+            return  $result;
         } catch (\Exception $e) {
             $code = self::TAF_GET_DOUBLE_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
 
@@ -517,104 +486,84 @@ class TafAssistant {
 
     public function putFloat($paramName,$float) {
         try {
-            $floatBuffer = \TWUP::putFloat($paramName,$float);
+            $floatBuffer = \Taf\PHPTAF::putFloat_v2($paramName,$float);
             if(!is_string($floatBuffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_FLOAT_FAILED), self::TAF_PUT_FLOAT_FAILED);
             }
             $this->encodeBufs[$paramName] = $floatBuffer;
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $floatBuffer
-            );
+            return  self::TAF_SUCCESS;
         } catch (\Exception $e) {
             $code = self::TAF_PUT_FLOAT_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function getFloat($name) {
         try {
-            $result = \TWUP::getFloat($name,$this->tafDecodeData);
-            if($result < 0) {
-                throw new \Exception(self::getErrMsg(self::TAF_GET_FLOAT_FAILED), self::TAF_GET_FLOAT_FAILED);
-            }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $result = \Taf\PHPTAF::getFloat_v2($name,$this->tafDecodeData);
+
+            return $result;
         } catch (\Exception $e) {
             $code = self::TAF_GET_FLOAT_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
     }
 
     public function putString($paramName,$string) {
         try {
-            $stringBuffer = \TWUP::putString($paramName,$string);
+            $stringBuffer = \Taf\PHPTAF::putString_v2($paramName,$string);
             if(!is_string($stringBuffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_STRING_FAILED), self::TAF_PUT_STRING_FAILED);
             }
             $this->encodeBufs[$paramName] = $stringBuffer;
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $stringBuffer
-            );
+            return self::TAF_SUCCESS;
         } catch (\Exception $e) {
             $code = self::TAF_PUT_STRING_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function getString($name) {
         try {
-            $result = \TWUP::getString($name,$this->tafDecodeData);
+            $result = \Taf\PHPTAF::getString_v2($name,$this->tafDecodeData);
             if($result < 0) {
                 throw new \Exception(self::getErrMsg(self::TAF_GET_STRING_FAILED), self::TAF_GET_STRING_FAILED);
             }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            return  $result;
+
         } catch (\Exception $e) {
             $code = self::TAF_GET_STRING_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function putVector($paramName,$vec) {
         try {
-            $vecBuffer = \TWUP::putVector($paramName,$vec);
+            $vecBuffer = \Taf\PHPTAF::putVector_v2($paramName,$vec);
             if(!is_string($vecBuffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_VECTOR_FAILED), self::TAF_PUT_VECTOR_FAILED);
             }
             $this->encodeBufs[$paramName] = $vecBuffer;
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $vecBuffer
-            );
+            return self::TAF_SUCCESS;
+
         } catch (\Exception $e) {
             $code = self::TAF_PUT_VECTOR_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function getVector($name,$vec) {
         try {
-            $result = \TWUP::getVector($name,$vec,$this->tafDecodeData);
-            if($result < 0) {
-                throw new \Exception(self::getErrMsg(self::TAF_GET_VECTOR_FAILED), self::TAF_GET_VECTOR_FAILED);
-            }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $result = \Taf\PHPTAF::getVector_v2($name,$vec,$this->tafDecodeData);
+
+            return  $result;
         } catch (\Exception $e) {
             $code = self::TAF_GET_VECTOR_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
@@ -622,83 +571,73 @@ class TafAssistant {
 
     public function putMap($paramName,$map) {
         try {
-            $mapBuffer = \TWUP::putMap($paramName,$map);
+            $mapBuffer = \Taf\PHPTAF::putMap_v2($paramName,$map);
             if(!is_string($mapBuffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_MAP_FAILED), self::TAF_PUT_MAP_FAILED);
             }
             $this->encodeBufs[$paramName] = $mapBuffer;
 
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $mapBuffer
-            );
+            return self::TAF_SUCCESS;
         } catch (\Exception $e) {
             $code = self::TAF_PUT_MAP_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
     public function getMap($name,$obj) {
         try {
-            $result = \TWUP::getMap($name,$obj,$this->tafDecodeData);
+            $result = \Taf\PHPTAF::getMap_v2($name,$obj,$this->tafDecodeData);
             if(!is_array($result)) {
                 throw new \Exception(self::getErrMsg(self::TAF_GET_MAP_FAILED), self::TAF_GET_MAP_FAILED);
             }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            return  $result;
         } catch (\Exception $e) {
             $code = self::TAF_GET_MAP_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
     }
 
-    public function putStruct($paramName,$obj,$objVal) {
+    public function putStruct($paramName,$obj) {
         try {
-            $structBuffer = \TWUP::putStruct($paramName,$obj,$objVal);
+            $structBuffer = \Taf\PHPTAF::putStruct_v2($paramName,$obj);
             if(!is_string($structBuffer)) {
                 throw new \Exception(self::getErrMsg(self::TAF_PUT_STRUCT_FAILED), self::TAF_PUT_STRUCT_FAILED);
             }
             $this->encodeBufs[$paramName] = $structBuffer;
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $structBuffer
-            );
+            return self::TAF_SUCCESS;
         } catch (\Exception $e) {
             $code = self::TAF_PUT_STRUCT_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
 
     }
 
 
-    public function getStruct($name,$obj) {
+    public function getStruct($name,&$obj) {
         try {
-            $result = \TWUP::getStruct($name,$obj,$this->tafDecodeData);
+            $result = \Taf\PHPTAF::getStruct_v2($name,$obj,$this->tafDecodeData);
             if(!is_array($result)) {
                 throw new \Exception(self::getErrMsg(self::TAF_GET_STRUCT_FAILED), self::TAF_GET_STRUCT_FAILED);
             }
-            return array(
-                'code' => self::TAF_SUCCESS,
-                'data' => $result
-            );
+            $this->fromArray($result,$obj);
+            return $result;
+
         } catch (\Exception $e) {
             $code = self::TAF_GET_STRUCT_FAILED;
-            throw new \Exception($e->getMessage(), $code);
+            throw new \Exception(self::getErrMsg($code), $code);
         }
     }
 
-
-    public function sendAndReceive($timeout=5) {
+    public function sendAndReceive($timeout=2) {
+        // 首先尝试encode
         try {
-            $this->tafRequestBuf = \TWUP::encode($this->iVersion,self::$iRequestId,$this->servantName,$this->funcName,$this->encodeBufs);
+            $this->tafRequestBuf = \Taf\PHPTAF::encode_v2($this->iVersion,self::$iRequestId,$this->servantName,
+                $this->funcName,$this->cPacketType,$this->iMessageType,$timeout,$this->contexts,$this->statuses,$this->encodeBufs);
             $this->encodeBufs = [];
             if(!is_string($this->tafRequestBuf)) {
-                return array(
-                    'code' => self::TAF_ENCODE_FAILED
-                );
+                $code = self::TAF_ENCODE_FAILED;
+                throw new \Exception(self::getErrMsg($code), $code);
             }
 
             $ret = self::TAF_SUCCESS;
@@ -708,25 +647,31 @@ class TafAssistant {
                 $ret = $this->tcpSocket($timeout);
             }
 
+            // 收发包失败了
             if ($ret !== self::TAF_SUCCESS) {
-                return array('code' => $ret);
+                throw new \Exception(self::getErrMsg($ret), $ret);
             }
 
         } catch (\Exception $e) {
-            return array(
-                'code'=> self::TAF_FAILED
-            );
+            throw new \Exception($e->getMessage(), $e->getCode());
         }
         self::$iRequestId++;
 
-        $this->tafDecodeData = \TWUP::decode($this->tafResponseBuf);
-        if($this->tafDecodeData['code'] !== self::TAF_SUCCESS) {
-            $msg = self::getErrMsg($this->tafDecodeData['code']);
-            return array('code' => self::TAF_DECODE_FAILED,'msg' => $msg);
-        }
-        $this->tafDecodeData = $this->tafDecodeData['buf'];
+        // 其次尝试decode
+        try {
+            $decodeRet = \Taf\PHPTAF::decode_v2($this->tafResponseBuf);
+            if($decodeRet['status'] !== self::TAF_SUCCESS) {
+                $msg = self::getErrMsg($decodeRet['status']);
+                throw new \Exception($msg, $decodeRet['status']);
+            }
+            $this->tafDecodeData = $decodeRet['buf'];
 
-        return array('code' => self::TAF_SUCCESS);
+            return array('code' => self::TAF_SUCCESS);
+        }
+        catch (\Exception $e) {
+            $code = self::TAF_DECODE_FAILED;
+            throw new \Exception($e->getMessage(), $e->getCode());
+        }
     }
 
     private static function getErrMsg($code) {
@@ -761,9 +706,9 @@ class TafAssistant {
             self::TAF_ENCODE_FAILED => 'taf编码失败，请检查数据类型，传入字段长度',
             self::TAF_DECODE_FAILED => 'taf解码失败，请检查传入的数据类型，是否从服务端接收到了正确的结果',
 
-            self::TAF_GET_BOOL_FAILED => 'bool类型打包失败，请检查是否传入了正确值',
-            self::TAF_GET_STRUCT_FAILED => 'struct类型打包失败，请检查是否传入了正确值',
-            self::TAF_GET_VECTOR_FAILED => 'vector类型打包失败，请检查是否传入了正确值',
+            self::TAF_GET_BOOL_FAILED => 'bool类型解包失败，请检查是否传入了正确值',
+            self::TAF_GET_STRUCT_FAILED => 'struct类型解包失败，请检查是否传入了正确值',
+            self::TAF_GET_VECTOR_FAILED => 'vector类型解包失败，请检查是否传入了正确值',
             self::TAF_GET_INT64_FAILED => 'int64类型解包失败，请检查是否传入了正确值',
             self::TAF_GET_INT32_FAILED => 'int32类型解包失败，请检查是否传入了正确值',
             self::TAF_GET_STRING_FAILED => 'sting类型解包失败，请检查是否传入了正确值',
@@ -781,7 +726,6 @@ class TafAssistant {
         return isset($errMap[$code])?$errMap[$code]:'未定义异常';
     }
 
-
     /**
      * udp收发包
      * @param $ip
@@ -791,13 +735,14 @@ class TafAssistant {
      */
     private function udpSocket($timeout)
     {
-        $obj = WsdMonitor::startActive('qdPcSite', $this->servantName, $this->sIp . $this->iPort, $this->funcName);
+        $obj = WsdMonitor::startActive($this->_callerName, $this->servantName, $this->sIp . $this->iPort, $this->funcName);
 
         $time = microtime(true);
         $sock = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
 
         if (false === $sock) {
             $obj->endTiming(self::TAF_SOCKET_CREATE_FAILED, WsdMonitor::RESULT_FAILED);
+
             return self::TAF_SOCKET_CREATE_FAILED; // socket创建失败
         }
 
@@ -818,6 +763,7 @@ class TafAssistant {
 
         if (0 == $timeout) {
             $obj->endTiming(self::TAF_SOCKET_RECEIVE_FAILED, WsdMonitor::RESULT_FAILED);
+
             socket_close($sock);
             return self::TAF_SUCCESS; // 无回包的情况，返回成功
         }
@@ -829,10 +775,12 @@ class TafAssistant {
 
         if (FALSE === $ret) {
             $obj->endTiming(self::TAF_SOCKET_RECEIVE_FAILED, WsdMonitor::RESULT_FAILED);
+
             socket_close($sock);
             return self::TAF_SOCKET_RECEIVE_FAILED; // 收包失败
         } elseif ($ret != 1) {
             $obj->endTiming(self::TAF_SOCKET_SELECT_TIMEOUT, WsdMonitor::RESULT_FAILED);
+
             socket_close($sock);
             return self::TAF_SOCKET_SELECT_TIMEOUT; // 收包超时
         }
@@ -842,6 +790,7 @@ class TafAssistant {
         while (true) {
             if (microtime(true) - $time > $timeout) {
                 $obj->endTiming(self::TAF_SOCKET_SELECT_TIMEOUT, WsdMonitor::RESULT_FAILED);
+
                 socket_close($sock);
                 return self::TAF_SOCKET_TIMEOUT; // 收包超时
             }
@@ -855,6 +804,7 @@ class TafAssistant {
 
             $this->tafResponseBuf = $out;
             socket_close($sock);
+
             $obj->endTiming(self::TAF_SUCCESS);
 
             return self::TAF_SUCCESS;
@@ -870,18 +820,20 @@ class TafAssistant {
      */
     private function tcpSocket($timeout)
     {
-        $obj = WsdMonitor::startActive('qdPcSite', $this->servantName, $this->sIp . $this->iPort, $this->funcName);
+        $obj = WsdMonitor::startActive($this->_callerName, $this->servantName, $this->sIp . $this->iPort, $this->funcName);
 
         $time = microtime(true);
         $sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
 
         if (false === $sock) {
             $obj->endTiming(self::TAF_SOCKET_CREATE_FAILED, WsdMonitor::RESULT_FAILED);
-            return self::TAF_SOCKET_CREATE_FAILED; // socket创建失败
+
+            return -1; // socket创建失败
         }
 
         if (!socket_connect($sock, $this->sIp, $this->iPort)) {
             $obj->endTiming(self::TAF_SOCKET_CONNECT_FAILED, WsdMonitor::RESULT_FAILED);
+
             socket_close($sock);
             return self::TAF_SOCKET_CONNECT_FAILED;
         }
@@ -889,6 +841,7 @@ class TafAssistant {
         $len = strlen($this->tafRequestBuf);
         if (socket_write($sock, $this->tafRequestBuf, $len) != $len) {
             $obj->endTiming(self::TAF_SOCKET_SEND_FAILED, WsdMonitor::RESULT_FAILED);
+
             socket_close($sock);
             return self::TAF_SOCKET_SEND_FAILED;
         }
@@ -898,10 +851,12 @@ class TafAssistant {
 
         if (false === $ret) {
             $obj->endTiming(self::TAF_SOCKET_RECEIVE_FAILED, WsdMonitor::RESULT_FAILED);
+
             socket_close($sock);
             return self::TAF_SOCKET_RECEIVE_FAILED;
         } elseif ($ret != 1) {
             $obj->endTiming(self::TAF_SOCKET_SELECT_TIMEOUT, WsdMonitor::RESULT_FAILED);
+
             socket_close($sock);
             return self::TAF_SOCKET_SELECT_TIMEOUT;
         }
@@ -911,6 +866,7 @@ class TafAssistant {
         while (true) {
             if (microtime(true) - $time > $timeout) {
                 $obj->endTiming(self::TAF_SOCKET_TIMEOUT, WsdMonitor::RESULT_FAILED);
+
                 socket_close($sock);
                 return self::TAF_SOCKET_TIMEOUT; // 收包超时
             }
@@ -920,6 +876,7 @@ class TafAssistant {
 
             if (empty($data)) {
                 $obj->endTiming(self::TAF_SOCKET_CLOSED, WsdMonitor::RESULT_FAILED);
+
                 // 已经断开连接
                 return self::TAF_SOCKET_CLOSED;
             } else {
@@ -937,6 +894,7 @@ class TafAssistant {
                 //check if all package is receved
                 if (strlen($this->tafResponseBuf) >= $totalLen) {
                     $obj->endTiming(self::TAF_SUCCESS);
+
                     socket_close($sock);
                     return self::TAF_SUCCESS;
                 }
@@ -944,6 +902,20 @@ class TafAssistant {
         }
     }
 
-}
+    // 将数组转换成对象
+    public function fromArray($data,&$structObj)
+    {
+        if(!empty($data)) {
+            foreach ($data as $key => $value) {
+                if (method_exists($structObj, 'set' . ucfirst($key))){
+                    call_user_func_array([$this, 'set' . ucfirst($key)], [$value]);
+                } else if ($structObj->$key instanceOf \Taf\TJCE_Struct) {
+                    $this->fromArray($value,$structObj->$key);
+                } else {
+                    $structObj->$key = $value;
+                }
+            }
+        }
+    }
 
-?>
+}

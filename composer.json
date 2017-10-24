@@ -2,7 +2,7 @@
     "name": "phptaf/taf-assistant",
     "description": "php network assistant to request taf",
     "license":"MIT",
-    "version":"1.0.6",
+    "version":"2.0.0",
     "authors": [
         {
             "name": "Chen Liang",

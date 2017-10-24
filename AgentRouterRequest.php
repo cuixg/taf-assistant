@@ -1,39 +1,51 @@
 <?php
-/**
- * Created by PhpStorm.
- * User: liangchen
- * Date: 16/7/20
- * Time: 下午4:55
- */
+
 namespace Taf;
 
-define('LB_TYPE_LOOP,',0);
-define('LB_TYPE_RANDOM,',1);
-define('LB_TYPE_HASH,',2);
-define('LB_TYPE_CST_HASH,',3);
-define('LB_AGENT_IDC,',0);
-define('LB_AGENT_SET,',1);
-define('LB_AGENT_ALL,',2);
+class AgentRouterRequest extends \Taf\TJCE_Struct {
+	const TYPE = 1;
+	const SOBJ = 2;
+	const SSET = 3;
+	const ITID = 4;
+	const SAPIVER = 5;
 
 
+	public $type; 
+	public $sObj; 
+	public $sSet; 
+	public $iTid; 
+	public $sApiVer; 
 
-class AgentRouterRequest  extends \TJCE_Struct
-{
 
-    public $type = \TJCE::SHORT;
+	protected static $fields = array(
+		self::TYPE => array(
+			'name'=>'type',
+			'required'=>false,
+			'type'=>\Taf\TJCE::UINT8,
+),
+		self::SOBJ => array(
+			'name'=>'sObj',
+			'required'=>false,
+			'type'=>\Taf\TJCE::STRING,
+),
+		self::SSET => array(
+			'name'=>'sSet',
+			'required'=>false,
+			'type'=>\Taf\TJCE::STRING,
+),
+		self::ITID => array(
+			'name'=>'iTid',
+			'required'=>false,
+			'type'=>\Taf\TJCE::INT64,
+),
+		self::SAPIVER => array(
+			'name'=>'sApiVer',
+			'required'=>false,
+			'type'=>\Taf\TJCE::STRING,
+),
+	);
 
-    public $sObj = \TJCE::STRING;
-
-    public $sSet = \TJCE::STRING;
-
-    public $iTid = \TJCE::INT64;
-
-    public $sApiVer = \TJCE::STRING;
-
-    public function __construct() {
-        $startZero = 0;
-
-        parent::__construct($startZero,'tafagent.AgentRouterRequest');
-
-    }
+	public function __construct() {
+		parent::__construct('taf_tafagent_RouterNewObj.AgentRouterRequest', self::$fields);
+	}
 }
