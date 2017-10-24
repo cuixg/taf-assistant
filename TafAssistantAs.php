@@ -1,6 +1,6 @@
 <?php
 
-namespace af;
+namespace Taf;
 
 use Taf\WsdMonitor;
 
