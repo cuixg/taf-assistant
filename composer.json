@@ -1,0 +1,27 @@
+{
+    "name": "tafassistant",
+    "description": "php network assistant to request taf",
+    "license":"MIT",
+    "version":"1.0.0",
+    "authors": [
+        {
+            "name": "Chen Liang",
+            "email": "liangchen@yuewen.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {
+      "php": "<=7.1.10"
+    },
+    "autoload": {
+      "classmap": [
+        "TafAssistant.php",
+        "TafAssistantAs.php",
+        "AgentRouterRequest.php",
+        "AgentRouterResponse.php",
+        "LocalSwooleTable.php",
+        "RouterNodeInfo.php",
+        "WsdMonitor.php"
+      ]
+    }
+}
