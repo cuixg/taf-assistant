@@ -15,8 +15,9 @@
     },
     "autoload": {
       "classmap": [
-        "TafAssistant.php",
-        "TafAssistantAs.php",
+        "TafAssistantV2.php",
+        "TafAssistantAsV2.php",
+        "TafAssistantNyV2.php",
         "AgentRouterRequest.php",
         "AgentRouterResponse.php",
         "LocalSwooleTable.php",
