@@ -2,7 +2,7 @@
     "name": "phptaf/taf-assistant",
     "description": "php network assistant to request taf",
     "license":"MIT",
-    "version":"2.0.6",
+    "version":"2.0.7",
     "authors": [
         {
             "name": "Chen Liang",
@@ -12,11 +12,6 @@
     "minimum-stability": "dev",
     "require": {
       "php": "<=7.1.10"
-    },
-    "scripts": {
-      "post-install-cmd": [
-        "Taf\\WsdMonitor::setConfig"
-      ]
     },
     "autoload": {
       "classmap": [

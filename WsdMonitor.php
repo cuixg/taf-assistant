@@ -8,7 +8,7 @@
  * 米格上报用 php类库
  * @version 3.1
  */
-namespace Taf;
+namespace weblib\taf;
 
 class WsdMonitor
 {

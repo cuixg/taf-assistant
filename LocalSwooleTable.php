@@ -1,7 +1,6 @@
 <?php
 
-namespace Taf;
-
+namespace weblib\taf;
 
 class LocalSwooleTable {
     private static $_swooleTable;

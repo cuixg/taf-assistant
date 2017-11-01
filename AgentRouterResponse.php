@@ -1,8 +1,6 @@
 <?php
 
-
-namespace Taf;
-
+namespace weblib\taf;
 
 class AgentRouterResponse extends \Taf\TJCE_Struct {
 	const TYPE = 1;

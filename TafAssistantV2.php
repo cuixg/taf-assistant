@@ -1,11 +1,11 @@
 <?php
 
-namespace Taf;
+namespace weblib\taf;
 
-use Taf\WsdMonitor;
-use Taf\AgentRouterRequest;
-use Taf\AgentRouterResponse;
-use Taf\RouterNodeInfo;
+use weblib\taf\WsdMonitor;
+use weblib\taf\AgentRouterRequest;
+use weblib\taf\AgentRouterResponse;
+use weblib\taf\RouterNodeInfo;
 
 class TafAssistantV2
 {

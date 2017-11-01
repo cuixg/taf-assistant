@@ -21,7 +21,7 @@ AgentRouterRequest/AgentRouterResponse/RouterNodeInfo: 使用了agent进行主�
 
 ```
 "require": {
-      "phptaf/taf-assistant": "2.0.3"
+      "phptaf/taf-assistant": "2.0.7"
 }
 ```
 

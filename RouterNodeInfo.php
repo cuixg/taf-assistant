@@ -1,8 +1,7 @@
 <?php
 
 
-namespace Taf;
-
+namespace weblib\taf;
 
 class RouterNodeInfo extends \Taf\TJCE_Struct {
 	const SIP = 1;
