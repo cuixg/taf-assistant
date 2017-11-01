@@ -51,6 +51,11 @@ class WsdMonitor
     /** @var string 调用方名字，主动模式为自己的名字， 被动模式为来源名字 */
     protected $callerName  = '';
 
+    public static function setDefaultConfig($config)
+    {
+        self::$defaultConfig = array_merge(self::$defaultConfig, $config);
+    }
+
     /**
      * 主动调用模式，发起计时统计
      * @param string $callerName 自身服务的名字
