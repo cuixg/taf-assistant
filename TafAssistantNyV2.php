@@ -29,7 +29,7 @@ class TafAssistantNyV2
     const TAF_SOCKET_TIMEOUT = -1006; // socket超时，一般是svr后台没回包，或者seq错误
     const TAF_SOCKET_CONNECT_FAILED = -1007; // socket tcp 连接失败
     const TAF_SOCKET_CLOSED = -1008; // socket tcp 服务端连接关闭
-    const TAF_SOCKET_CREATE_FAILED = -1070;
+    const TAF_SOCKET_CREATE_FAILED = -10070;
 
 
     const TAF_PUT_STRUCT_FAILED = -9;
@@ -77,7 +77,7 @@ class TafAssistantNyV2
     const JCEPROXYCONNECTERR     = -8; //proxy链接异常
     const JCESERVERUNKNOWNERR    = -99; //服务器端未知异常
 
-
+    private $client;
 
     private $tafRequestBuf;
     private $tafResponseBuf;
@@ -720,12 +720,12 @@ class TafAssistantNyV2
         }
     }
 
-    public function sendAndReceive($timeout=3) {
+    public function sendAndReceive($timeout=2) {
         // 首先尝试encode
         try {
 
             // 增加本地开发的代理层
-            if(APP_ENV === 'local') {
+            if($_SERVER['QD_TSF_ENV'] === 'local') {
 
                 $hc = new \tsf\client\Coroutine\Http("http://proxy.qidian.com/taf/proxy2");
                 $hc->setConfig([
@@ -799,6 +799,62 @@ class TafAssistantNyV2
 
     }
 
+    //发包
+    public function send($timeout = 3, $defer = false)
+    {
+        $this->tafRequestBuf = \Taf\PHPTAF::encode_v2($this->iVersion,self::$iRequestId,$this->servantName,
+            $this->funcName,$this->cPacketType,$this->iMessageType,$timeout,$this->contexts,$this->statuses,$this->encodeBufs);
+        $this->encodeBufs = [];
+        if(!is_string($this->tafRequestBuf)) {
+            $code = self::TAF_ENCODE_FAILED;
+            throw new \Exception(self::getErrMsg($code), $code);
+        }
+
+        $ret = self::TAF_SUCCESS;
+
+        if ($this->socketMode === self::SOCKET_MODE_UDP) {
+            $ret = $this->udpSocket($timeout, $defer);
+        } else if($this->socketMode === self::SOCKET_MODE_TCP) {
+            $ret = $this->tcpAs($timeout, $defer);
+        }
+
+        // 发包失败了
+        if ($ret !== self::TAF_SUCCESS) {
+            throw new \Exception(self::getErrMsg($ret), $ret);
+        }
+
+        return array('code' => self::TAF_SUCCESS);
+    }
+
+    //收包与解包
+    public function receive()
+    {
+        $obj = WsdMonitor::startActive($this->_callerName, $this->servantName, $this->sIp . $this->iPort, $this->funcName);
+        $res = $this->client->recv();
+        if ($res['r'] !== self::TAF_SUCCESS) {
+            $obj->endTiming($res['r'], WsdMonitor::RESULT_FAILED);
+            throw new \Exception(self::getErrMsg($res['r']), $res['r']);
+        }
+        $obj->endTiming($res['r']);
+        $this->tafResponseBuf = $res['data'];
+
+        // 其次尝试decode
+        try {
+            $decodeRet = \Taf\PHPTAF::decode_v2($this->tafResponseBuf);
+            if($decodeRet['status'] !== self::TAF_SUCCESS) {
+                $msg = self::getErrMsg($decodeRet['status']);
+                throw new \Exception($msg, $decodeRet['status']);
+            }
+            $this->tafDecodeData = $decodeRet['buf'];
+
+            return array('code' => self::TAF_SUCCESS);
+        }
+        catch (\Exception $e) {
+            throw new \Exception($e->getMessage(), $e->getCode());
+        }
+        self::$iRequestId++;
+    }
+
     private static function getErrMsg($code) {
         $errMap = [
             self::JCESERVERSUCCESS => '服务器端处理成功',
@@ -862,17 +918,18 @@ class TafAssistantNyV2
     /**
      *  udp收發包
      * @param $timeout
+     * @param bool $defer
      * @return int
      */
-    private function udpSocket($timeout)
+    private function udpSocket($timeout, $defer = false)
     {
         $obj = WsdMonitor::startActive($this->_callerName, $this->servantName, $this->sIp . $this->iPort, $this->funcName);
 
-        $client = new \tsf\client\Coroutine\Udp($this->sIp, $this->iPort, $this->tafRequestBuf, $timeout);
-        $res = $client->send();
+        $this->client = new \tsf\client\Coroutine\Udp($this->sIp, $this->iPort, $this->tafRequestBuf, $timeout);
+        $res = $this->client->send($defer);
         if ($res['r'] === self::TAF_SUCCESS) {
             $obj->endTiming($res['r']);
-            $this->tafResponseBuf = $res['data'];
+            $this->tafResponseBuf = !$defer ? $res['data'] : '';
             return self::TAF_SUCCESS;
         } else {
             $obj->endTiming($res['r'], WsdMonitor::RESULT_FAILED);
@@ -883,9 +940,10 @@ class TafAssistantNyV2
     /**
      * tcp收發包
      * @param $timeout
+     * @param bool $defer
      * @return int
      */
-    private function tcpAs($timeout)
+    private function tcpAs($timeout, $defer = false)
     {
         $obj = WsdMonitor::startActive($this->_callerName, $this->servantName, $this->sIp . $this->iPort, $this->funcName);
 
@@ -893,11 +951,11 @@ class TafAssistantNyV2
             $obj->endTiming(self::ROUTE_FAIL, WsdMonitor::RESULT_FAILED);
             return  self::ROUTE_FAIL;
         }
-        $client = new \tsf\client\Coroutine\Tcp($this->sIp, $this->iPort, $this->tafRequestBuf, $timeout);
-        $res = $client->send();
+        $this->client = new \tsf\client\Coroutine\Tcp($this->sIp, $this->iPort, $this->tafRequestBuf, $timeout);
+        $res = $this->client->send($defer);
         if ($res['r'] === self::TAF_SUCCESS) {
             $obj->endTiming($res['r']);
-            $this->tafResponseBuf = $res['data'];
+            $this->tafResponseBuf = !$defer ? $res['data'] : '';
             return  self::TAF_SUCCESS;
         } else {
             $obj->endTiming($res['r'], WsdMonitor::RESULT_FAILED);
